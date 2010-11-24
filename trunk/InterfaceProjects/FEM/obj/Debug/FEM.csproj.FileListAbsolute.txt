@@ -3,3 +3,8 @@ C:\FEM\FEM\bin\Debug\FEM.dll
 C:\FEM\FEM\bin\Debug\FEM.pdb
 C:\FEM\FEM\obj\Debug\FEM.dll
 C:\FEM\FEM\obj\Debug\FEM.pdb
+C:\pmm51-postproc-fem\InterfaceProjects\FEM\bin\Debug\FEM.dll
+C:\pmm51-postproc-fem\InterfaceProjects\FEM\bin\Debug\FEM.pdb
+C:\pmm51-postproc-fem\InterfaceProjects\FEM\obj\Debug\ResolveAssemblyReference.cache
+C:\pmm51-postproc-fem\InterfaceProjects\FEM\obj\Debug\FEM.dll
+C:\pmm51-postproc-fem\InterfaceProjects\FEM\obj\Debug\FEM.pdb
