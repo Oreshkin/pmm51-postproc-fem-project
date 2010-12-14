@@ -11,23 +11,28 @@
     {
         void GetNodes(point[] p, int num); // полечение КЭ по глобальному номеру 
         MaterialIdentifire GetMaterial(int num); // получение материала по глобальному номеру КЭ 
-        double GetValues(point A, TypeOfSolution type); //получение решения  в точке A 
+        double GetValues(point A, TypeOfSolution type, Direction d); //получение решения  в точке A 
         double[,] LocalMatrix(MatrixType type, int num); // получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
-        double DiffDirection(Direction d); //смена направления производной, d-переменная, по которой дифференцируем d={x,y}
-        double solution_max(TypeOfSolution type); //поиск максимума
-        double solution_min(TypeOfSolution type); //поиск минимума
+        double[] DiffDirection(Direction d); //смена направления производной, d-переменная, по которой дифференцируем d={x,y}
+        double solution_max(TypeOfSolution type, Direction d); //поиск максимума
+        double solution_min(TypeOfSolution type, Direction d); //поиск минимума
     }
     public class triangleLin : IBasisMKE  //линейные треугольники 
     {
+        public int flagX, flagY;
         public Mesh Set;     // сетка считывается и создается в конструкторе объекта этого класса
-        public triangleLin(string FileNameMesh, string FileNameSolution)
+        public SLAE_MSG S_X; // решатель для dx
+        public SLAE_MSG S_Y; // решатель для dy
+        public triangleLin(string FileNameMesh, string FileNameSolution, string FileNameIG, string FileNameJG)
         {
             Set = new Mesh(FileNameMesh, FileNameSolution);//чтение сетки
+            S_X = new SLAE_MSG(FileNameIG, FileNameJG, Set.solution.Length);
+            S_Y = new SLAE_MSG(FileNameIG, FileNameJG, Set.solution.Length);
         }
         public void GetNodes(point[] p, int num)   // получили по номеру элемента координаты вершин
         {
             int i;
-            for (i = 0; i < 3; i++)
+            for (i = 0; i < p.Length; i++) // было до 3-х
             {
                 p[i].x = Set.elements[num].vertex[i].x;
                 p[i].y = Set.elements[num].vertex[i].y;
@@ -38,7 +43,7 @@
         {
             return Set.elements[num].material;
         }
-        public double GetValues(point A, TypeOfSolution type)  // получение решения в точке A
+        public double GetValues(point A, TypeOfSolution type, Direction d)  // получение решения в точке A
         {
             int i;
             int num = -1;//номер элемента
@@ -97,7 +102,11 @@
                 if (type == TypeOfSolution.Solution)
                     return w[0] * Set.solution[Set.elements[num].vertex[0].globalNum] + w[1] * Set.solution[Set.elements[num].vertex[1].globalNum] + w[2] * Set.solution[Set.elements[num].vertex[2].globalNum];
                 else
-                    return 0;  //ТУТ ДОЛЖНА БЫТЬ МАРИНИНА РЕЗУЛЬТАНТА
+                {
+                    if(d==Direction.x)
+                        return w[0] * S_X.Q[Set.elements[num].vertex[0].globalNum] + w[1] * S_X.Q[Set.elements[num].vertex[1].globalNum] + w[2] * S_X.Q[Set.elements[num].vertex[2].globalNum];
+                    else return w[0] * S_Y.Q[Set.elements[num].vertex[0].globalNum] + w[1] * S_Y.Q[Set.elements[num].vertex[1].globalNum] + w[2] * S_Y.Q[Set.elements[num].vertex[2].globalNum];
+                }
             }
 
         }
@@ -105,18 +114,30 @@
         {
             double[,] M = new double[3, 3];
             int i, j;
+            double[] b = new double[3]; 
+            double[] c = new double[3];
             double x1, x2, x3, y1, y2, y3;
             double det;//определитель
             double gamma = Set.MaterialGamma(Set.elements[num].material);
+
+            x1 = Set.elements[num].vertex[0].x;
+            x2 = Set.elements[num].vertex[1].x;
+            x3 = Set.elements[num].vertex[2].x;
+            y1 = Set.elements[num].vertex[0].y;
+            y2 = Set.elements[num].vertex[1].y;
+            y3 = Set.elements[num].vertex[2].y;
+            det = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+
+            b[0] = (y2 - y3) / det;
+            b[1] = (y3 - y1) / det;
+            b[2] = (y1 - y2) / det;
+
+            c[0] = (x3 - x2) / det;
+            c[1] = (x1 - x3) / det;
+            c[2] = (x2 - x1) / det;
+
             if (type == MatrixType.mass)
             {
-                x1 = Set.elements[num].vertex[0].x;
-                x2 = Set.elements[num].vertex[1].x;
-                x3 = Set.elements[num].vertex[2].x;
-                y1 = Set.elements[num].vertex[0].y;
-                y2 = Set.elements[num].vertex[1].y;
-                y3 = Set.elements[num].vertex[2].y;
-                det = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
                 for (i = 0; i < 3; i++)
                     for (j = 0; j < 3; j++)
                         if (i == j)
@@ -128,55 +149,195 @@
             {
                 if (type == MatrixType.exotic1)
                 {
-
+                    // посчитать матрицы для производной по х
+                    for (i = 0; i < 3; i++)
+                        for (j = 0; j < 3; j++)
+                                M[i, j] = b[j] * det / 6.0;
                 }
                 else
                 {
-
+                    // посчитать матрицы для производной по У
+                    for (i = 0; i < 3; i++)
+                        for (j = 0; j < 3; j++)
+                                M[i, j] = c[j] * det / 6.0;
                 }
             }
             return M;
         }// получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
-        public double solution_max(TypeOfSolution type)
+
+        public double solution_max(TypeOfSolution type, Direction d)
         {
+            double max;
             if (type == TypeOfSolution.Solution)
             {
-                double max = Set.solution[0];
+                max = Set.solution[0];
                 for (int i = 1; i < Set.solution.Length; i++)
                     if (max < Set.solution[i]) max = Set.solution[i];
                 return max;
             }
             else
             {
-                return 0; // РЕЗУЛЬТАНТА МАРИНИНА
+                if (d == Direction.x)
+               {
+                    max = S_X.Q[0];
+                    for (int i = 1; i < S_X.Q.Length; i++)
+                        if (max < S_X.Q[i]) max = S_X.Q[i];
+                    return max;
+                } 
+                else
+                {
+                    max = S_Y.Q[0];
+                    for (int i = 1; i < S_Y.Q.Length; i++)
+                        if (max < S_Y.Q[i]) max = S_Y.Q[i];
+                    return max;
+                } 
             }
         }
 
-        public double solution_min(TypeOfSolution type)
+        public double solution_min(TypeOfSolution type, Direction d)
         {
+            double min;
             if (type == TypeOfSolution.Solution)
             {
-                double min = Set.solution[0];
+                min = Set.solution[0];
                 for (int i = 1; i < Set.solution.Length; i++)
                     if (min > Set.solution[i]) min = Set.solution[i];
                 return min;
             }
             else
             {
-                return 0;
+                if (d == Direction.x)
+                {
+                    min = S_X.Q[0];
+                    for (int i = 1; i < S_X.Q.Length; i++)
+                        if (min > S_X.Q[i]) min = S_X.Q[i];
+                    return min;
+                }
+                else
+                {
+                    min = S_Y.Q[0];
+                    for (int i = 1; i < S_Y.Q.Length; i++)
+                        if (min > S_Y.Q[i]) min = S_Y.Q[i];
+                    return min;
+                }
             }
         }
-        public double DiffDirection(Direction d)
+        public double[] DiffDirection(Direction d)
         {
-            /*            SmoothMke S;
-                        if (d == Direction.x)
+            int nkel, i, j;
+            double t;
+            point[] Velem=new point[3];
+            double[,] M = new double[3, 3];
+            double[,] Ex = new double[3, 3];
+            if (d == Direction.x)
+            {
+                if (flagX == 0)
+                {
+                    for(i=0;i<Set.solution.Length;i++) 
+                        S_X.F[i]=0.0;
+
+                    for (nkel = 0; nkel < Set.elements.Length; nkel++)  // сборка глобального вектора и матрицы
+                    {
+                        GetNodes(Velem, nkel);
+                        M = LocalMatrix(MatrixType.mass, nkel);
+                        Ex = LocalMatrix(MatrixType.exotic1, nkel);
+                        SR_GM_INGLOB(Velem, M, Direction.x);
+                        for (i = 0; i < 3; i++)
                         {
+                            for (j = 0; j < 3; j++)
+                            {
+                                t = GetValues(Velem[j], TypeOfSolution.Solution, Direction.x);
+                                S_X.F[Velem[i].globalNum] += Ex[i, j] * t;
+                            }
                         }
-                        else
-                        { 
+                            
+                    }
+                    S_X.MSG();
+                    flagX = 1;
+                }
+                return S_X.Q;
+            }
+            else
+            {
+                if (flagY == 0)
+                {
+                    for (i = 0; i < Set.solution.Length; i++)
+                        S_Y.F[i] = 0.0;
+
+                    for (nkel = 0; nkel < Set.elements.Length; nkel++) // сборка глобального вектора и матрицы
+                    {
+                        GetNodes(Velem, nkel);
+                        M = LocalMatrix(MatrixType.mass, nkel);
+                        Ex = LocalMatrix(MatrixType.exotic2, nkel);
+                        SR_GM_INGLOB(Velem, M, Direction.y);
+                        for (i = 0; i < 3; i++)
+                        {
+                            for (j = 0; j < 3; j++)
+                            {
+                                t = GetValues(Velem[j], TypeOfSolution.Solution, Direction.y);
+                                S_Y.F[Velem[i].globalNum] += Ex[i, j] * t;
+                            }
                         }
-              */
-            return 0;
+
+                    }
+                    S_Y.MSG();
+                    flagY = 1;
+                }
+                return S_Y.Q;
+            }
+        }
+
+        void SR_GM_INGLOB(point[] p, double[,] M, Direction d)   // добавление в глобальную матриуц (в зависимостри от напр. произв.)
+        {
+            int i, j, ind, k, s;
+            if (d == Direction.x)
+            {
+                for (i = 0; i < 3; i++)
+                    S_X.DI[p[i].globalNum] += M[i, i];
+
+                for (k = 0; k < 3; k++)
+                {
+                    for (s = 0; s < 3; s++)
+                    {
+                        i = p[k].globalNum;
+                        j = p[s].globalNum;
+                        if (i < j)
+                        {
+                            for (ind = S_X.IG[j]; S_X.JG[ind] != i && ind <= S_X.IG[j + 1] - 1; ind++)
+                                S_X.GGU[ind] += M[k, s];
+                        }
+                        else if (i > j)
+                        {
+                            for (ind = S_X.IG[i]; S_X.JG[ind] != j && ind <= S_X.IG[i + 1] - 1; ind++)
+                                S_X.GGL[ind] += M[k, s];
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (i = 0; i < 3; i++)
+                    S_Y.DI[p[i].globalNum] += M[i, i];
+
+                for (k = 0; k < 3; k++)
+                {
+                    for (s = 0; s < 3; s++)
+                    {
+                        i = p[k].globalNum;
+                        j = p[s].globalNum;
+                        if (i < j)
+                        {
+                            for (ind = S_Y.IG[j]; S_Y.JG[ind] != i && ind <= S_Y.IG[j + 1] - 1; ind++)
+                                S_Y.GGU[ind] += M[k, s];
+                        }
+                        else if (i > j)
+                        {
+                            for (ind = S_Y.IG[i]; S_Y.JG[ind] != j && ind <= S_Y.IG[i + 1] - 1; ind++)
+                                S_Y.GGL[ind] += M[k, s];
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -237,7 +398,8 @@
         public double[] solution;   // массив весов 
         public Mesh(string FileNameMesh, string FileNameSolution)  //чтение сетки и решения из файлов  
         {
-            FileStream f = new FileStream(FileNameMesh, FileMode.Open, FileAccess.Read);
+            FileStream f = null; 
+            f = new FileStream(FileNameMesh, FileMode.Open, FileAccess.Read);
             StreamReader Reader = new StreamReader(f);
             string[] t;
             int i, N, N_elem, qwe, flag_of_vertex, j;
@@ -344,8 +506,162 @@
         }
     }
 
+    //**************************************************************
+    // КЛАСС РЕШАТЕЛЬ
+    //**************************************************************
+    public class SLAE_MSG
+    {
+        public int Nmatrix, Nelem, Nig, Njg; // Nmatrix - кол-во точек, Nelem - кол-во элементов
+        public int N, M;
+        public int[] IG, JG;
+        public double[] DI, GGU, GGL, F, F_LOC;
+        public double[] Q;
+        double[,] Dcoord_LOC2, M_LOC2;
+        point[] Velem;
+
+        public SLAE_MSG(string FileNameIG, string FileNameJG, int N) 
+        {
+            int i;
+            string[] t;
+            Nmatrix = N;
+            Nelem = M;
+            FileStream f = new FileStream(FileNameIG, FileMode.Open, FileAccess.Read);    //читаем IG
+            StreamReader Reader = new StreamReader(f);
+            Nig = Nmatrix + 1;
+            IG = new int[Nig];
+            for (i = 0; i < Nig; i++)
+            {
+                t = Reader.ReadLine().Split(' ');
+                IG[i] = Convert.ToInt32(t[0]);
+            }
+            Reader.Close();
+
+            f = new FileStream(FileNameJG, FileMode.Open, FileAccess.Read);     //читаем JG
+            Reader = new StreamReader(f);
+            Njg = IG[Nmatrix];
+            JG = new int[Njg];
+            for (i = 0; i < Njg; i++)
+            {
+                t = Reader.ReadLine().Split(' ');
+                JG[i] = Convert.ToInt32(t[0]);
+            }
+            Reader.Close();
+
+            DI = new double[Nmatrix];
+            GGU = new double[Njg];
+            GGL = new double[Njg];
+            F = new double[Nmatrix];
+            Q = new double[Nmatrix];
+            F_LOC = new double[3];
+            M_LOC2 = new double[3, 3];   //!!!
+            Dcoord_LOC2 = new double[3, 3];
+
+            Velem = new point[3];
+        }
+
+        void mult(double a, double[] x, double[] y)
+        {
+            for (int i = 0; i < Nmatrix; i++)
+                y[i] = x[i] + a * y[i];
+        }
+
+        void summult(double a, double[] x, double[] y)
+        {
+            for (int i = 0; i < Nmatrix; i++)
+                y[i] += a * x[i];
+        }
+
+        void copy(double[] x, double[] y)
+        {
+            for (int i = 0; i < Nmatrix; i++)
+                y[i] = x[i];
+        }
+
+        double norma(double[] x)
+       {
+           double res = 0.0;
+            for (int i=0; i<Nmatrix; i++)
+             res += Math.Pow(x[i],2);
+           res = Math.Sqrt(res);
+           return res;
+       }
+
+        double scal(double[] x, double[] y)
+       {
+           double res = 0.0;
+            for (int i=0; i<Nmatrix; i++)
+             res += x[i] * y[i];
+           return res;
+       }
+
+        void mult_A(double[] x, double[] y)
+        {
+            int j, ig0, ig1;
+
+            for (int i = 0; i < Nmatrix; i++)
+            {
+                ig0 = IG[i];
+                ig1 = IG[i + 1];
+                y[i] = DI[i] * x[i];
+                for (int k = ig0; k < ig1; k++)
+                {
+                    j = JG[k];
+                    y[i] += GGL[k] * x[j];
+                    y[j] += GGU[k] * x[i];
+                }
+            }
+        }
+
+        void mult_f_A(double[] x, double[] y)
+        {
+            int j, i, ig0, ig1;
+
+            for (i = 0; i < Nmatrix; i++)
+            {
+                ig0 = IG[i];
+                ig1 = IG[i + 1];
+                y[i] = F[i] - DI[i] * x[i];
+                for (int k = ig0; k < ig1; k++)
+                {
+                    j = JG[k];
+                    y[i] -= GGL[k] * x[j];
+                    y[j] -= GGU[k] * x[i];
+                }
+            }
+        }
+
+        public void MSG()
+        {
+            int i;
+             int maxit=1, MAX=10000;
+             double A_RESH, B_RESH, T1, nev = 1.0, f, e=1e-15;
+             double[] R_RESH, Z_RESH, T2, HL;
+             
+             R_RESH = new double [Nmatrix];  //#######
+             Z_RESH = new double [Nmatrix];  //#######
+             T2 = new double[Nmatrix];  //#######
+             HL = new double[Nmatrix];  //#######
+
+          for(i=0; i<Nmatrix-1; i++)
+           Q[i]=1.0;
+          Q[Nmatrix-1]=1.0;
+     
+         mult_f_A(Q,R_RESH);   // f-Ax0  //#######
+         copy (R_RESH,Z_RESH);
+         f = norma(F);                // ||pr||  //#######
+
+          while(nev>e && maxit <= MAX)  //#######
+         {
+          T1 = scal(R_RESH,R_RESH);                  // (rk-1, rk-1) #######
+          mult_A(Z_RESH,T2);   // Azk-1  //#######
+          A_RESH = T1/scal(T2,Z_RESH);               // Ak #######
+          summult (A_RESH,Z_RESH,Q);                 // xk #######
+          summult (-A_RESH,T2,R_RESH);               // rk #######
+          B_RESH = scal(R_RESH,R_RESH)/T1;                  // Bk #######
+          mult (B_RESH,R_RESH,Z_RESH);                    // zk #######
+          nev = norma(R_RESH)/f;                // otnos nev  //#######
+          maxit++;  //#######
+         }
+        }
+    }
 }
-
-
-
-
