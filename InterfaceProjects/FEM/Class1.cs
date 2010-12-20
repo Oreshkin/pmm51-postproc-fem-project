@@ -9,10 +9,9 @@
 
     public interface IBasisMKE
     {
-        void GetNodes(point[] p, int num); // полечение КЭ по глобальному номеру 
+        point[] GetNodes(int num); // полечение КЭ по глобальному номеру 
         MaterialIdentifire GetMaterial(int num); // получение материала по глобальному номеру КЭ 
         double GetValues(point A, TypeOfSolution type, Direction d); //получение решения  в точке A 
-        double[,] LocalMatrix(MatrixType type, int num); // получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
         double[] DiffDirection(Direction d); //смена направления производной, d-переменная, по которой дифференцируем d={x,y}
         double solution_max(TypeOfSolution type, Direction d); //поиск максимума
         double solution_min(TypeOfSolution type, Direction d); //поиск минимума
@@ -23,21 +22,24 @@
         public Mesh Set;     // сетка считывается и создается в конструкторе объекта этого класса
         public SLAE_MSG S_X; // решатель для dx
         public SLAE_MSG S_Y; // решатель для dy
-        public triangleLin(string FileNameMesh, string FileNameSolution, string FileNameIG, string FileNameJG)
+        public triangleLin(StreamReader ReaderFileNameMesh, StreamReader ReaderFileNameSolution)
         {
-            Set = new Mesh(FileNameMesh, FileNameSolution);//чтение сетки
-            S_X = new SLAE_MSG(FileNameIG, FileNameJG, Set.solution.Length);
-            S_Y = new SLAE_MSG(FileNameIG, FileNameJG, Set.solution.Length);
+            Set = new Mesh(ReaderFileNameMesh, ReaderFileNameSolution);//чтение сетки
+            S_X = new SLAE_MSG(Set.solution.Length);
+            S_Y = new SLAE_MSG(Set.solution.Length);
         }
-        public void GetNodes(point[] p, int num)   // получили по номеру элемента координаты вершин
+        public point[] GetNodes(int num)   // получили по номеру элемента координаты вершин
         {
             int i;
+            int numNode = Set.elements[num].vertex.Length;
+            point [] p=new point[numNode];
             for (i = 0; i < p.Length; i++) // было до 3-х
             {
                 p[i].x = Set.elements[num].vertex[i].x;
                 p[i].y = Set.elements[num].vertex[i].y;
                 p[i].globalNum = Set.elements[num].vertex[i].globalNum;
             }
+            return p;
         }
         public MaterialIdentifire GetMaterial(int num)   // получение номера материала
         {
@@ -47,188 +49,112 @@
         {
             int i;
             int num = -1;//номер элемента
-            double S1, S2, S3, S;
-            double a1, a2, a3, b1, b2, b3, c1, c2, c3;
-            double x = A.x;
-            double y = A.y;
-            double x1, x2, x3, y1, y2, y3;
-            double[] w = new double[3];  // базисные функции
+
+
+ 
             //поиск нужного конечного элемента
             for (i = 0; i < Set.elements.Length; i++)
             {
-                x1 = Set.elements[i].vertex[0].x;
-                x2 = Set.elements[i].vertex[1].x;
-                x3 = Set.elements[i].vertex[2].x;
-                y1 = Set.elements[i].vertex[0].y;
-                y2 = Set.elements[i].vertex[1].y;
-                y3 = Set.elements[i].vertex[2].y;
-                S = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
-                S1 = Math.Abs((x2 - x) * (y3 - y) - (x3 - x) * (y2 - y));
-                S2 = Math.Abs((x - x1) * (y3 - y1) - (x3 - x1) * (y - y1));
-                S3 = Math.Abs((x2 - x1) * (y - y1) - (x - x1) * (y2 - y1));
-                if (Math.Abs(S1 + S2 + S3 - S) < 1e-10)
+  
+                if(Set.elements[i].isInElement(A))
                 {
-                    num = i;  // нашли
-                    break;
+                    num = i;
                 }
+                
             }
-            if (num == -1) return 0;//ошибка, не нашли элемент, которому принадлежит точка А
+
+            if (num==-1) return 0;//ошибка, не нашли элемент, которому принадлежит точка А
             else
             {
-                x1 = Set.elements[num].vertex[0].x;
-                x2 = Set.elements[num].vertex[1].x;
-                x3 = Set.elements[num].vertex[2].x;
-                y1 = Set.elements[num].vertex[0].y;
-                y2 = Set.elements[num].vertex[1].y;
-                y3 = Set.elements[num].vertex[2].y;
-                S = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
-                //барицентрические координаты
-                a1 = (x2 * y3 - x3 * y2) / S;
-                a2 = (x3 * y1 - x1 * y3) / S;
-                a3 = (x1 * y2 - x2 * y1) / S;
+                int numNode = Set.elements[num].vertex.Length;
+                double[] w = new double[numNode];  // базисные функции
+                w = Set.elements[num].getWeights(A);
 
-                b1 = (y2 - y3) / S;
-                b2 = (y3 - y1) / S;
-                b3 = (y1 - y2) / S;
-
-                c1 = (x3 - x2) / S;
-                c2 = (x1 - x3) / S;
-                c3 = (x2 - x1) / S;
-                //барицентрические координаты
-                //базисные функции в точке
-                w[0] = a1 + b1 * x + c1 * y;
-                w[1] = a2 + b2 * x + c2 * y;
-                w[2] = a3 + b3 * x + c3 * y;
+                double res=0;
                 if (type == TypeOfSolution.Solution)
-                    return w[0] * Set.solution[Set.elements[num].vertex[0].globalNum] + w[1] * Set.solution[Set.elements[num].vertex[1].globalNum] + w[2] * Set.solution[Set.elements[num].vertex[2].globalNum];
+                {
+                    for (i = 0; i < numNode; i++)
+                        res += w[i] * Set.solution[Set.elements[num].vertex[i].globalNum];
+                    return res;
+                }
+
                 else
                 {
-                    if(d==Direction.x)
-                        return w[0] * S_X.Q[Set.elements[num].vertex[0].globalNum] + w[1] * S_X.Q[Set.elements[num].vertex[1].globalNum] + w[2] * S_X.Q[Set.elements[num].vertex[2].globalNum];
-                    else return w[0] * S_Y.Q[Set.elements[num].vertex[0].globalNum] + w[1] * S_Y.Q[Set.elements[num].vertex[1].globalNum] + w[2] * S_Y.Q[Set.elements[num].vertex[2].globalNum];
+                    if (d == Direction.x)
+                    {
+                        for (i = 0; i < numNode; i++)
+                            res += w[i] * S_X.Q[Set.elements[num].vertex[i].globalNum];
+                        return res;
+                    }
+
+                    else
+                    {
+                        for (i = 0; i < numNode; i++)
+                            res += w[i] * S_Y.Q[Set.elements[num].vertex[i].globalNum];
+                        return res;
+                    }
                 }
             }
 
         }
-        public double[,] LocalMatrix(MatrixType type, int num)
-        {
-            double[,] M = new double[3, 3];
-            int i, j;
-            double[] b = new double[3]; 
-            double[] c = new double[3];
-            double x1, x2, x3, y1, y2, y3;
-            double det;//определитель
-            double gamma = Set.MaterialGamma(Set.elements[num].material);
 
-            x1 = Set.elements[num].vertex[0].x;
-            x2 = Set.elements[num].vertex[1].x;
-            x3 = Set.elements[num].vertex[2].x;
-            y1 = Set.elements[num].vertex[0].y;
-            y2 = Set.elements[num].vertex[1].y;
-            y3 = Set.elements[num].vertex[2].y;
-            det = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
-
-            b[0] = (y2 - y3) / det;
-            b[1] = (y3 - y1) / det;
-            b[2] = (y1 - y2) / det;
-
-            c[0] = (x3 - x2) / det;
-            c[1] = (x1 - x3) / det;
-            c[2] = (x2 - x1) / det;
-
-            if (type == MatrixType.mass)
-            {
-                for (i = 0; i < 3; i++)
-                    for (j = 0; j < 3; j++)
-                        if (i == j)
-                            M[i, j] = gamma * det / 12.0;
-                        else
-                            M[i, j] = gamma * det / 24.0;
-            }
-            else
-            {
-                if (type == MatrixType.exotic1)
-                {
-                    // посчитать матрицы для производной по х
-                    for (i = 0; i < 3; i++)
-                        for (j = 0; j < 3; j++)
-                                M[i, j] = b[j] * det / 6.0;
-                }
-                else
-                {
-                    // посчитать матрицы для производной по У
-                    for (i = 0; i < 3; i++)
-                        for (j = 0; j < 3; j++)
-                                M[i, j] = c[j] * det / 6.0;
-                }
-            }
-            return M;
-        }// получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
 
         public double solution_max(TypeOfSolution type, Direction d)
         {
             double max;
+            double[] q;
             if (type == TypeOfSolution.Solution)
             {
-                max = Set.solution[0];
-                for (int i = 1; i < Set.solution.Length; i++)
-                    if (max < Set.solution[i]) max = Set.solution[i];
-                return max;
+                q = Set.solution;
             }
             else
             {
                 if (d == Direction.x)
-               {
-                    max = S_X.Q[0];
-                    for (int i = 1; i < S_X.Q.Length; i++)
-                        if (max < S_X.Q[i]) max = S_X.Q[i];
-                    return max;
-                } 
+                {
+                    q = S_X.Q;
+                }
                 else
                 {
-                    max = S_Y.Q[0];
-                    for (int i = 1; i < S_Y.Q.Length; i++)
-                        if (max < S_Y.Q[i]) max = S_Y.Q[i];
-                    return max;
-                } 
+                    q = S_Y.Q;
+                }
             }
+            max = q[0];
+            for (int i = 1; i < q.Length; i++)
+                if (max < q[i]) max = q[i];
+            return max;
         }
 
         public double solution_min(TypeOfSolution type, Direction d)
         {
             double min;
+            double[] q;
             if (type == TypeOfSolution.Solution)
             {
-                min = Set.solution[0];
-                for (int i = 1; i < Set.solution.Length; i++)
-                    if (min > Set.solution[i]) min = Set.solution[i];
-                return min;
+                q = Set.solution;
             }
             else
             {
                 if (d == Direction.x)
                 {
-                    min = S_X.Q[0];
-                    for (int i = 1; i < S_X.Q.Length; i++)
-                        if (min > S_X.Q[i]) min = S_X.Q[i];
-                    return min;
+                    q = S_X.Q;
                 }
                 else
                 {
-                    min = S_Y.Q[0];
-                    for (int i = 1; i < S_Y.Q.Length; i++)
-                        if (min > S_Y.Q[i]) min = S_Y.Q[i];
-                    return min;
+                    q = S_Y.Q;
                 }
             }
+            min = q[0];
+            for (int i = 1; i < q.Length; i++)
+                if (min > q[i]) min = q[i];
+            return min;
         }
         public double[] DiffDirection(Direction d)
         {
             int nkel, i, j;
+            int numNode;
             double t;
-            point[] Velem=new point[3];
-            double[,] M = new double[3, 3];
-            double[,] Ex = new double[3, 3];
+            double[,] M;
+            double[,] Ex;
             if (d == Direction.x)
             {
                 if (flagX == 0)
@@ -237,20 +163,23 @@
                         S_X.F[i]=0.0;
 
                     for (nkel = 0; nkel < Set.elements.Length; nkel++)  // сборка глобального вектора и матрицы
-                    {
-                        GetNodes(Velem, nkel);
-                        M = LocalMatrix(MatrixType.mass, nkel);
-                        Ex = LocalMatrix(MatrixType.exotic1, nkel);
-                        SR_GM_INGLOB(Velem, M, Direction.x);
-                        for (i = 0; i < 3; i++)
+                    {   numNode = Set.elements[nkel].vertex.Length;
+                        M = new double[numNode, numNode];
+                        Ex = new double[numNode, numNode];
+                        point[] Velem=GetNodes(nkel);
+                        M = Set.elements[nkel].LocalMatrix(MatrixType.mass);
+                        Ex = Set.elements[nkel].LocalMatrix(MatrixType.exotic1);
+                        SR_GM_INGLOB(Velem, M, Direction.x,numNode);
+                        for (i = 0; i < numNode; i++)
                         {
-                            for (j = 0; j < 3; j++)
+                            for (j = 0; j < numNode; j++)
                             {
                                 t = GetValues(Velem[j], TypeOfSolution.Solution, Direction.x);
                                 S_X.F[Velem[i].globalNum] += Ex[i, j] * t;
                             }
                         }
-                            
+                        M = null;
+                        Ex=null;
                     }
                     S_X.MSG();
                     flagX = 1;
@@ -266,19 +195,23 @@
 
                     for (nkel = 0; nkel < Set.elements.Length; nkel++) // сборка глобального вектора и матрицы
                     {
-                        GetNodes(Velem, nkel);
-                        M = LocalMatrix(MatrixType.mass, nkel);
-                        Ex = LocalMatrix(MatrixType.exotic2, nkel);
-                        SR_GM_INGLOB(Velem, M, Direction.y);
-                        for (i = 0; i < 3; i++)
+                        numNode = Set.elements[nkel].vertex.Length;
+                        M = new double[numNode, numNode];
+                        Ex = new double[numNode, numNode];
+                        point[] Velem=GetNodes(nkel);
+                        M = Set.elements[nkel].LocalMatrix(MatrixType.mass);
+                        Ex = Set.elements[nkel].LocalMatrix(MatrixType.exotic2);
+                        SR_GM_INGLOB(Velem, M, Direction.y,numNode);
+                        for (i = 0; i < numNode; i++)
                         {
-                            for (j = 0; j < 3; j++)
+                            for (j = 0; j < numNode; j++)
                             {
                                 t = GetValues(Velem[j], TypeOfSolution.Solution, Direction.y);
                                 S_Y.F[Velem[i].globalNum] += Ex[i, j] * t;
                             }
                         }
-
+                        M = null;
+                        Ex = null;
                     }
                     S_Y.MSG();
                     flagY = 1;
@@ -287,17 +220,19 @@
             }
         }
 
-        void SR_GM_INGLOB(point[] p, double[,] M, Direction d)   // добавление в глобальную матриуц (в зависимостри от напр. произв.)
+        void SR_GM_INGLOB(point[] p, double[,] M, Direction d, int numNode)   // добавление в глобальную матриуц (в зависимостри от напр. произв.)
         {
             int i, j, ind, k, s;
             if (d == Direction.x)
             {
-                for (i = 0; i < 3; i++)
+                numNode = Set.elements[numNode].vertex.Length;
+
+                for (i = 0; i < numNode; i++)
                     S_X.DI[p[i].globalNum] += M[i, i];
 
-                for (k = 0; k < 3; k++)
+                for (k = 0; k < numNode; k++)
                 {
-                    for (s = 0; s < 3; s++)
+                    for (s = 0; s < numNode; s++)
                     {
                         i = p[k].globalNum;
                         j = p[s].globalNum;
@@ -316,12 +251,12 @@
             }
             else
             {
-                for (i = 0; i < 3; i++)
+                for (i = 0; i < numNode; i++)
                     S_Y.DI[p[i].globalNum] += M[i, i];
 
-                for (k = 0; k < 3; k++)
+                for (k = 0; k < numNode; k++)
                 {
-                    for (s = 0; s < 3; s++)
+                    for (s = 0; s < numNode; s++)
                     {
                         i = p[k].globalNum;
                         j = p[s].globalNum;
@@ -348,93 +283,220 @@
         public int globalNum; // использовать только для вершин сетки/// глобальный номер узла в сетке
     }
 
-    public enum ElemType { triangle, rectangle };//тип элемента:{треугольник, четырехугольник} 
-    public enum BasisType { lin, quadr, cub }; // тип базиса:{линейный, квадратичный, тубический} 
     public enum MatrixType { mass, gest, exotic1, exotic2 };//тип матрицы:{массы, жесткости, особые} 
     public enum MaterialIdentifire { one, two, three };//номер подобласти/материала 
     public enum Direction { x, y }; //переменная, по которой дифференцируем
     public enum TypeOfSolution { Solution, Resultanta };//выдаем решение или результанту
-
-    public class Element
+    abstract public class Element
     {
-        public ElemType type;
-        public BasisType btype;
         public point[] vertex; // массив вершин КЭ 
         public MaterialIdentifire material;
-
-        public Element(ElemType t, MaterialIdentifire m, point[] v)
+        protected Element(MaterialIdentifire m, point[] v)
         {
-            int i;
-            type = t;
             material = m;
-            if (type == ElemType.triangle)
+            vertex = v;
+        }
+        abstract public bool isInElement( point A);
+        abstract public double[] getWeights( point A);
+        abstract public double[,] LocalMatrix(MatrixType type); // получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
+
+    }
+    class Triangle : Element
+    {
+        public Triangle(MaterialIdentifire m, point[] v) : base(m, v) { }
+        override public bool isInElement( point A)
+        {
+            double x1, x2, x3, y1, y2, y3, S, S1, S2, S3, x, y;
+            x = A.x;
+            y = A.y;
+
+            x1 = vertex[0].x;
+            x2 = vertex[1].x;
+            x3 = vertex[2].x;
+            y1 = vertex[0].y;
+            y2 = vertex[1].y;
+            y3 = vertex[2].y;
+
+            S = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+            S1 = Math.Abs((x2 - x) * (y3 - y) - (x3 - x) * (y2 - y));
+            S2 = Math.Abs((x - x1) * (y3 - y1) - (x3 - x1) * (y - y1));
+            S3 = Math.Abs((x2 - x1) * (y - y1) - (x - x1) * (y2 - y1));
+            if (Math.Abs(S1 + S2 + S3 - S) < 1e-10)
             {
-                vertex = new point[3];
+                return true;
+            }
+            else return false;
+
+        }
+
+
+    override public double[] getWeights(point A)
+    {
+    double x1,x2,x3,y1,y2,y3,S,a1,a2,a3,b1,b2,b3,c1,c2,c3,x,y;
+    double[]  w = new double [3];
+
+    x = A.x;
+    y = A.y;
+
+    x1 = vertex[0].x;
+    x2 = vertex[1].x;
+    x3 = vertex[2].x;
+    y1 = vertex[0].y;
+    y2 = vertex[1].y;
+    y3 = vertex[2].y;
+                S = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+                //барицентрические координаты
+                a1 = (x2 * y3 - x3 * y2) / S;
+                a2 = (x3 * y1 - x1 * y3) / S;
+                a3 = (x1 * y2 - x2 * y1) / S;
+
+                b1 = (y2 - y3) / S;
+                b2 = (y3 - y1) / S;
+                b3 = (y1 - y2) / S;
+
+                c1 = (x3 - x2) / S;
+                c2 = (x1 - x3) / S;
+                c3 = (x2 - x1) / S;
+                //барицентрические координаты
+                //базисные функции в точке
+                w[0] = a1 + b1 * x + c1 * y;
+                w[1] = a2 + b2 * x + c2 * y;
+                w[2] = a3 + b3 * x + c3 * y;
+
+    return w;
+    }
+
+    override public double[,] LocalMatrix(MatrixType type)
+    {
+        double x1, x2, x3, y1, y2, y3, det;
+
+        double[,] M = new double[3, 3];
+        int i, j;
+        double[] b = new double[3];
+        double[] c = new double[3];
+        //double x1, x2, x3, y1, y2, y3;
+        //double det;//определитель
+        double gamma;
+        if (material == MaterialIdentifire.one)
+            gamma= 1.0;
+        else
+            if (material == MaterialIdentifire.two)
+                gamma= 2.0;
+            else
+                gamma= 3.0;
+
+        x1 = vertex[0].x;
+        x2 = vertex[1].x;
+        x3 = vertex[2].x;
+        y1 = vertex[0].y;
+        y2 = vertex[1].y;
+        y3 = vertex[2].y;
+        det = Math.Abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+
+        b[0] = (y2 - y3) / det;
+        b[1] = (y3 - y1) / det;
+        b[2] = (y1 - y2) / det;
+
+        c[0] = (x3 - x2) / det;
+        c[1] = (x1 - x3) / det;
+        c[2] = (x2 - x1) / det;
+
+        if (type == MatrixType.mass)
+        {
+            for (i = 0; i < 3; i++)
+                for (j = 0; j < 3; j++)
+                    if (i == j)
+                        M[i, j] = gamma * det / 12.0;
+                    else
+                        M[i, j] = gamma * det / 24.0;
+        }
+        else
+        {
+            if (type == MatrixType.exotic1)
+            {
+                // посчитать матрицы для производной по х
                 for (i = 0; i < 3; i++)
-                {
-                    vertex[i].x = v[i].x;
-                    vertex[i].y = v[i].y;
-                    vertex[i].globalNum = v[i].globalNum;
-                }
+                    for (j = 0; j < 3; j++)
+                        M[i, j] = b[j] * det / 6.0;
             }
             else
             {
-                vertex = new point[4];
-                for (i = 0; i < 4; i++)
-                {
-                    vertex[i].x = v[i].x;
-                    vertex[i].y = v[i].y;
-                    vertex[i].globalNum = v[i].globalNum;
-                }
+                // посчитать матрицы для производной по У
+                for (i = 0; i < 3; i++)
+                    for (j = 0; j < 3; j++)
+                        M[i, j] = c[j] * det / 6.0;
             }
         }
+        return M;
+    }// получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
 
+    } // конец класса треугольник
+
+    class Quadrangle : Element
+    {
+        public Quadrangle(MaterialIdentifire m, point[] v) : base(m, v) { }
+        override public bool isInElement( point A)
+        {
+            return false;
+
+        }
+
+
+        override public double[] getWeights( point A)
+    {
+            double []w = new double [4];
+             return w;
     }
 
+        override public double[,] LocalMatrix(MatrixType type)
+        {
 
-    public class Mesh : IEnumerable, IEnumerator
+            double[,] M = new double[4,4];
+            
+            return M;
+        }// получение локальной матрицы заданного типа type для элемента  с глобальным номером num 
+    }
+
+   public class Mesh : IEnumerable, IEnumerator
     {
         public Element[] elements;  //массив элементов 
         public double[] solution;   // массив весов 
-        public Mesh(string FileNameMesh, string FileNameSolution)  //чтение сетки и решения из файлов  
+        public Mesh(StreamReader ReaderFileNameMesh, StreamReader ReaderFileNameSolution)  //чтение сетки и решения из файлов  
         {
-            FileStream f = null; 
-            f = new FileStream(FileNameMesh, FileMode.Open, FileAccess.Read);
-            StreamReader Reader = new StreamReader(f);
+          
             string[] t;
             int i, N, N_elem, qwe, flag_of_vertex, j;
             string[] temp;
-            ElemType type;
             point[] v; // массив вершин КЭ 
             MaterialIdentifire material;
 
             for (i = 0; i < 4; i++)
-                t = Reader.ReadLine().Split(' ');
-            t = Reader.ReadLine().Split(' ');
+                t = ReaderFileNameMesh.ReadLine().Split(' ');
+            t = ReaderFileNameMesh.ReadLine().Split(' ');
             N = Convert.ToInt32(t[0]);
             point[] nodes = new point[N];
             for (i = 0; i < N; i++)
             {
-                temp = Reader.ReadLine().Split(' ');
+                temp = ReaderFileNameMesh.ReadLine().Split(' ');
                 nodes[i].x = Convert.ToDouble(temp[1]);
                 nodes[i].y = Convert.ToDouble(temp[2]);
             }
             for (i = 0; i < 2; i++)
-                t = Reader.ReadLine().Split(' ');
-            t = Reader.ReadLine().Split(' ');
+                t = ReaderFileNameMesh.ReadLine().Split(' ');
+            t = ReaderFileNameMesh.ReadLine().Split(' ');
             N_elem = Convert.ToInt32(t[0]);
             elements = new Element[N_elem];
             for (i = 0; i < N_elem; i++)
             {
-                temp = Reader.ReadLine().Split(' ');
+                temp = ReaderFileNameMesh.ReadLine().Split(' ');
                 if (Convert.ToInt32(temp[1]) == 2)
                 {
-                    type = ElemType.triangle;
+           
                     flag_of_vertex = 3;
                 }
                 else
                 {
-                    type = ElemType.rectangle;
+             
                     flag_of_vertex = 4;
                 }
                 if (Convert.ToInt32(temp[3]) == 1)
@@ -452,23 +514,23 @@
                     v[j].y = nodes[qwe].y;
                     v[j].globalNum = qwe;
                 }
-                elements[i] = new Element(type, material, v);
+
+                if (flag_of_vertex == 3) elements[i] = new Triangle(material, v);
+                else elements[i] = new Quadrangle(material, v);
             }
 
-            Reader.Close();
+                       ReaderFileNameMesh.Close();
 
             solution = new double[N];
-            f = new FileStream(FileNameSolution, FileMode.Open, FileAccess.Read);
-            Reader = new StreamReader(f);
+         
             for (i = 0; i < N; i++)
             {
-                temp = Reader.ReadLine().Split(' ');
+                temp = ReaderFileNameSolution.ReadLine().Split(' ');
                 solution[i] = Convert.ToDouble(temp[0]);
 
             }
-            Reader.Close();
+                     ReaderFileNameSolution.Close();
         }
-
 
         public IEnumerator GetEnumerator()
         {
@@ -519,13 +581,12 @@
         double[,] Dcoord_LOC2, M_LOC2;
         point[] Velem;
 
-        public SLAE_MSG(string FileNameIG, string FileNameJG, int N) 
+        public SLAE_MSG(int N)
         {
             int i;
             string[] t;
             Nmatrix = N;
-            Nelem = M;
-            FileStream f = new FileStream(FileNameIG, FileMode.Open, FileAccess.Read);    //читаем IG
+            FileStream f = new FileStream("ig.txt", FileMode.Open, FileAccess.Read);    //читаем IG
             StreamReader Reader = new StreamReader(f);
             Nig = Nmatrix + 1;
             IG = new int[Nig];
@@ -536,7 +597,7 @@
             }
             Reader.Close();
 
-            f = new FileStream(FileNameJG, FileMode.Open, FileAccess.Read);     //читаем JG
+            f = new FileStream("jg.txt", FileMode.Open, FileAccess.Read);     //читаем JG
             Reader = new StreamReader(f);
             Njg = IG[Nmatrix];
             JG = new int[Njg];
